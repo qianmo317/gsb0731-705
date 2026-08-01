@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Volume2, Repeat } from 'lucide-react';
 
 interface PlayerProps {
   playing: boolean;
@@ -12,6 +12,10 @@ interface PlayerProps {
   onVolumeChange: (val: number) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
+  sentenceLoop?: boolean;
+  sentenceReps?: number;
+  onToggleSentenceLoop?: () => void;
+  onSentenceRepsChange?: (val: number) => void;
 }
 
 const formatTime = (time: number) => {
@@ -30,7 +34,11 @@ export const Player: React.FC<PlayerProps> = ({
   volume,
   onVolumeChange,
   onToggleFavorite,
-  isFavorite
+  isFavorite,
+  sentenceLoop = false,
+  sentenceReps = 3,
+  onToggleSentenceLoop,
+  onSentenceRepsChange,
 }) => {
   return (
     <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 shadow-xl pb-safe transition-colors duration-300">
@@ -47,7 +55,7 @@ export const Player: React.FC<PlayerProps> = ({
         </div>
         
         {/* Progress Bar */}
-        <div className="flex items-center space-x-3 mb-6">
+        <div className="flex items-center space-x-3 mb-4">
           <span className="text-xs text-gray-400 w-10 text-right font-mono">{formatTime(currentTime)}</span>
           <input
             type="range"
@@ -59,6 +67,48 @@ export const Player: React.FC<PlayerProps> = ({
           />
           <span className="text-xs text-gray-400 w-10 font-mono">{formatTime(duration)}</span>
         </div>
+
+        {/* Sentence-by-sentence intensive listening */}
+        {onToggleSentenceLoop && (
+          <div className={`flex items-center justify-between gap-3 mb-4 px-3 py-2 rounded-xl transition-colors
+            ${sentenceLoop
+              ? 'bg-emerald-50 dark:bg-emerald-900/20 ring-1 ring-emerald-300/60 dark:ring-emerald-700/40'
+              : 'bg-gray-50 dark:bg-gray-800'}`}>
+            <button
+              onClick={onToggleSentenceLoop}
+              className={`flex items-center gap-2 text-sm font-bold transition active:scale-95
+                ${sentenceLoop
+                  ? 'text-emerald-700 dark:text-emerald-300'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              <Repeat size={18} className={sentenceLoop ? 'text-emerald-600 dark:text-emerald-400' : ''} />
+              逐句精听
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">每句重复</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => onSentenceRepsChange && onSentenceRepsChange(Math.max(1, sentenceReps - 1))}
+                  disabled={!sentenceLoop}
+                  className="w-6 h-6 flex items-center justify-center rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-bold shadow-sm disabled:opacity-40 active:scale-95 transition"
+                >
+                  −
+                </button>
+                <span className={`min-w-[2.5rem] text-center text-sm font-bold font-mono
+                  ${sentenceLoop ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {sentenceReps} 遍
+                </span>
+                <button
+                  onClick={() => onSentenceRepsChange && onSentenceRepsChange(Math.min(20, sentenceReps + 1))}
+                  disabled={!sentenceLoop}
+                  className="w-6 h-6 flex items-center justify-center rounded-md bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-sm font-bold shadow-sm disabled:opacity-40 active:scale-95 transition"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex justify-center items-center space-x-8 mb-6">
