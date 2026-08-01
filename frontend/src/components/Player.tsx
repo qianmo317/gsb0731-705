@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Volume2, Repeat1, Minus, Plus } from 'lucide-react';
 
 interface PlayerProps {
   playing: boolean;
@@ -12,6 +12,11 @@ interface PlayerProps {
   onVolumeChange: (val: number) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
+  sentenceMode?: boolean;
+  sentenceRepeat?: number;
+  sentencePass?: number;
+  onToggleSentenceMode?: () => void;
+  onSentenceRepeatChange?: (val: number) => void;
 }
 
 const formatTime = (time: number) => {
@@ -30,7 +35,12 @@ export const Player: React.FC<PlayerProps> = ({
   volume,
   onVolumeChange,
   onToggleFavorite,
-  isFavorite
+  isFavorite,
+  sentenceMode = false,
+  sentenceRepeat = 3,
+  sentencePass = 1,
+  onToggleSentenceMode,
+  onSentenceRepeatChange
 }) => {
   return (
     <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 shadow-xl pb-safe transition-colors duration-300">
@@ -89,6 +99,45 @@ export const Player: React.FC<PlayerProps> = ({
              <span className="sr-only">+10s</span>
            </button>
         </div>
+
+        {/* Sentence-by-sentence Mode */}
+        {onToggleSentenceMode && (
+          <div className="flex items-center space-x-3 px-4 py-2 mb-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+            <Repeat1 size={20} className={sentenceMode ? 'text-blue-500' : 'text-gray-400'} />
+            <span className={`text-sm font-bold ${sentenceMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>
+              逐句精听
+            </span>
+            {sentenceMode && (
+              <span className="text-xs text-blue-500 dark:text-blue-400 font-mono">
+                本句 第 {sentencePass}/{sentenceRepeat} 遍
+              </span>
+            )}
+            <div className="flex-1"></div>
+            {sentenceMode && onSentenceRepeatChange && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => onSentenceRepeatChange(sentenceRepeat - 1)}
+                  className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 active:scale-95 transition"
+                >
+                  <Minus size={14} />
+                </button>
+                <span className="text-xs font-mono text-gray-600 dark:text-gray-300 w-8 text-center">{sentenceRepeat} 遍</span>
+                <button
+                  onClick={() => onSentenceRepeatChange(sentenceRepeat + 1)}
+                  className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 active:scale-95 transition"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
+            <button
+              onClick={onToggleSentenceMode}
+              className={`w-11 h-6 rounded-full relative transition-colors ${sentenceMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${sentenceMode ? 'left-[22px]' : 'left-0.5'}`}></span>
+            </button>
+          </div>
+        )}
 
         {/* Volume Control */}
         <div className="flex items-center space-x-4 px-4 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
