@@ -1,5 +1,6 @@
 import React from 'react';
-import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Volume2, Repeat, X, Minus, Plus } from 'lucide-react';
+import { RepeatRange } from '../hooks/useAudio';
 
 interface PlayerProps {
   playing: boolean;
@@ -12,6 +13,13 @@ interface PlayerProps {
   onVolumeChange: (val: number) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
+  repeatRange?: RepeatRange | null;
+  repeatCount?: number;
+  onClearRepeat?: () => void;
+  sentenceRepeat?: boolean;
+  sentenceRepeatCount?: number;
+  onToggleSentenceRepeat?: (on: boolean) => void;
+  onSentenceRepeatCountChange?: (n: number) => void;
 }
 
 const formatTime = (time: number) => {
@@ -30,7 +38,14 @@ export const Player: React.FC<PlayerProps> = ({
   volume,
   onVolumeChange,
   onToggleFavorite,
-  isFavorite
+  isFavorite,
+  repeatRange,
+  repeatCount = 0,
+  onClearRepeat,
+  sentenceRepeat = false,
+  sentenceRepeatCount = 3,
+  onToggleSentenceRepeat,
+  onSentenceRepeatCountChange,
 }) => {
   return (
     <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 shadow-xl pb-safe transition-colors duration-300">
@@ -45,6 +60,62 @@ export const Player: React.FC<PlayerProps> = ({
               </button>
             )}
         </div>
+
+        {repeatRange && !sentenceRepeat && (
+          <div className="mb-4 flex items-center justify-center">
+            <span className="inline-flex items-center gap-2 pl-3 pr-1.5 py-1 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+              <Repeat size={13} className="animate-pulse" />
+              区间复读 · 第 {repeatCount + 1} 遍
+              {onClearRepeat && (
+                <button
+                  onClick={onClearRepeat}
+                  className="p-0.5 rounded-full hover:bg-blue-200/70 dark:hover:bg-blue-800 transition active:scale-90"
+                  aria-label="取消区间复读"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Sentence-by-sentence intensive listening toggle */}
+        {onToggleSentenceRepeat && (
+          <div className="mb-4 flex items-center justify-center">
+            <div className={`inline-flex items-center gap-2 pl-3 pr-1.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+              sentenceRepeat
+                ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'
+                : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+            }`}>
+              <button
+                onClick={() => onToggleSentenceRepeat(!sentenceRepeat)}
+                className="inline-flex items-center gap-1.5 py-0.5 active:scale-95 transition"
+              >
+                <Repeat size={13} className={sentenceRepeat ? 'animate-pulse' : ''} />
+                逐句精听
+              </button>
+              {sentenceRepeat && onSentenceRepeatCountChange && (
+                <span className="inline-flex items-center gap-1 ml-1">
+                  <button
+                    onClick={() => onSentenceRepeatCountChange(sentenceRepeatCount - 1)}
+                    className="p-0.5 rounded-full hover:bg-emerald-200/70 dark:hover:bg-emerald-800 transition active:scale-90"
+                    aria-label="减少遍数"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="min-w-[28px] text-center tabular-nums">{sentenceRepeatCount} 遍</span>
+                  <button
+                    onClick={() => onSentenceRepeatCountChange(sentenceRepeatCount + 1)}
+                    className="p-0.5 rounded-full hover:bg-emerald-200/70 dark:hover:bg-emerald-800 transition active:scale-90"
+                    aria-label="增加遍数"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         
         {/* Progress Bar */}
         <div className="flex items-center space-x-3 mb-6">
