@@ -42,4 +42,11 @@ export const loadLocalLessons = async () => {
 
 export const deleteLocalLesson = async (id: string) => {
     await del(STORE_PREFIX + id);
+    // Clean up per-lesson playback progress and practice stats kept in localStorage
+    try {
+        window.localStorage.removeItem(`progress-${id}`);
+        window.localStorage.removeItem(`loop-${id}`);
+        // Notify practice-stats listeners so the lesson list updates immediately
+        window.dispatchEvent(new Event('practice-stats-changed'));
+    } catch (e) { /* localStorage may be unavailable */ }
 };
