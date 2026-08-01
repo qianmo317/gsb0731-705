@@ -1,0 +1,18 @@
+[
+  {
+    "id": "lesson-1",
+    "title": "Lesson 1",
+    "category": "GREETINGS",
+    "keywords": [],
+    "audioUrl": "/audio/lesson-1.mp3",
+    "lrcUrl": "/audio/lesson-1.lrc"
+  },
+  {
+    "id": "lesson-2",
+    "title": "Lesson 2",
+    "category": "CLASSROOM EXPRESSIONS",
+    "keywords": [],
+    "audioUrl": "/audio/lesson-2.mp3",
+    "lrcUrl": "/audio/lesson-2.lrc"
+  }
+]
