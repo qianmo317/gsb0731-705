@@ -42,4 +42,12 @@ export const loadLocalLessons = async () => {
 
 export const deleteLocalLesson = async (id: string) => {
     await del(STORE_PREFIX + id);
+    // Remove the lesson's playback progress and practice traces together.
+    try {
+        window.localStorage.removeItem(`progress-${id}`);
+        window.localStorage.removeItem(`repeat-${id}`);
+        window.dispatchEvent(new Event('practice-stats-updated'));
+    } catch (e) {
+        console.warn('Failed to clean up local lesson data', e);
+    }
 };

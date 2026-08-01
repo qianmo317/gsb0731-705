@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAudio } from './hooks/useAudio';
 import { useSearch } from './hooks/useSearch';
 import { useFavorites } from './hooks/useFavorites';
+import { usePracticeStats } from './hooks/usePracticeStats';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { parseLRC, LrcLine } from './utils/lrcParser';
 
@@ -11,7 +12,7 @@ import { SearchBar } from './components/SearchBar';
 import { UploadZone } from './components/UploadZone';
 import { CategoryTabs } from './components/CategoryTabs';
 import { FavoriteButton } from './components/FavoriteButton';
-import { ChevronDown, ListMusic } from 'lucide-react'; // Import icons
+import { ChevronDown, ListMusic, Trash2 } from 'lucide-react'; // Import icons
 
 interface Lesson {
   id: string;
@@ -30,15 +31,21 @@ function AppImproved() {
   const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
   const [isDarkMode, setIsDarkMode] = useLocalStorage('darkMode', false);
+  const [repeatStartIndex, setRepeatStartIndex] = useState<number | null>(null);
 
   // --- Hooks ---
   const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const { setQuery, filteredItems: searchResults } = useSearch(lessons);
+  const practiceStats = usePracticeStats();
+  const practicedIds = useMemo(
+    () => new Set(Object.keys(practiceStats)),
+    [practiceStats]
+  );
 
   // --- Filtering Logic ---
   const categories = useMemo(() => {
      const cats = new Set(lessons.map(l => l.category).filter(Boolean));
-     return ['全部', '收藏', ...Array.from(cats)];
+     return ['全部', '练过', '收藏', ...Array.from(cats)];
   }, [lessons]);
 
   const displayedLessons = useMemo(() => {
@@ -46,12 +53,14 @@ function AppImproved() {
     
     if (selectedCategory === '收藏') {
       result = result.filter(l => favorites.includes(l.id));
+    } else if (selectedCategory === '练过') {
+      result = result.filter(l => practicedIds.has(l.id));
     } else if (selectedCategory !== '全部') {
       result = result.filter(l => l.category === selectedCategory);
     }
     
     return result;
-  }, [searchResults, selectedCategory, favorites]);
+  }, [searchResults, selectedCategory, favorites, practicedIds]);
 
   // --- Audio Hook ---
   const currentLesson = lessons.find(l => l.id === currentLessonId);
@@ -66,10 +75,20 @@ function AppImproved() {
       volume, 
       changeVolume, 
       error, 
-      loading 
+      loading,
+      repeatRange,
+      repeatCount,
+      setRepeatRange,
+      clearRepeatRange,
+      sentenceRepeat,
+      sentenceIteration,
+      sentenceRepeatCount,
+      setSentenceRepeat,
+      setSentenceRepeatCount,
   } = useAudio({
     src: audioSrc,
-    id: currentLessonId
+    id: currentLessonId,
+    lyrics,
   });
 
   // --- Effects ---
@@ -129,6 +148,11 @@ function AppImproved() {
     document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
+  // Reset the in-progress repeat anchor when switching lessons or lyrics reload.
+  useEffect(() => {
+    setRepeatStartIndex(null);
+  }, [currentLessonId, lyrics]);
+
   // --- Handlers ---
   const handleUpload = async ({ audio, lrc, metadata }: { audio: File; lrc?: File; metadata: any }) => {
      const newId = `local-${Date.now()}`;
@@ -166,6 +190,62 @@ function AppImproved() {
   const handleLessonSelect = (id: string) => {
       setCurrentLessonId(id);
       setIsPlayerExpanded(true);
+  };
+
+  const handleDeleteLesson = async (lesson: Lesson) => {
+    if (!lesson.keywords?.includes('local')) return;
+    if (!window.confirm(`确定删除「${lesson.title}」？练习记录也会一起清除。`)) return;
+    try {
+      const { deleteLocalLesson } = await import('./utils/db');
+      await deleteLocalLesson(lesson.id);
+    } catch (e) {
+      console.warn('Failed to delete local lesson', e);
+    }
+    setLessons((prev) => prev.filter((l) => l.id !== lesson.id));
+    if (currentLessonId === lesson.id) {
+      setCurrentLessonId('');
+      setIsPlayerExpanded(false);
+    }
+  };
+
+  const handleLyricLineClick = (index: number) => {
+    if (!lyrics.length) return;
+    const lineTime = lyrics[index].time;
+
+    // If a repeat range is already active:
+    //  - clicking inside the boxed area cancels it
+    //  - clicking outside starts a new selection
+    if (repeatRange) {
+      const startIdx = lyrics.findIndex((l) => l.time >= repeatRange.startTime);
+      const endIdx = lyrics.reduce(
+        (acc, l, i) => (l.time < repeatRange.endTime ? i : acc),
+        -1
+      );
+      clearRepeatRange();
+      if (index >= startIdx && index <= endIdx) {
+        setRepeatStartIndex(null);
+        return;
+      }
+      setRepeatStartIndex(index);
+      seek(lineTime);
+      return;
+    }
+
+    if (repeatStartIndex === null) {
+      // First click: mark start point and seek there
+      setRepeatStartIndex(index);
+      seek(lineTime);
+    } else {
+      // Second click: confirm the interval and start looping
+      const s = Math.min(repeatStartIndex, index);
+      const e = Math.max(repeatStartIndex, index);
+      const startTime = lyrics[s].time;
+      const endTime =
+        lyrics[e + 1]?.time ??
+        (duration > 0 ? duration : lyrics[lyrics.length - 1].time + 60);
+      setRepeatRange(startTime, endTime);
+      setRepeatStartIndex(null);
+    }
   };
 
   // --- Render ---
@@ -231,11 +311,36 @@ function AppImproved() {
                              <h3 className={`font-bold text-sm truncate ${currentLessonId === l.id ? 'text-blue-700 dark:text-blue-400' : 'text-gray-800 dark:text-gray-100'}`}>
                                 {l.title}
                              </h3>
-                             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{l.category}</p>
+                             <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 truncate">
+                                <span className="truncate">{l.category}</span>
+                                {practiceStats[l.id] && (practiceStats[l.id].totalSentences > 0 || practiceStats[l.id].totalLoops > 0) && (
+                                  <>
+                                    <span className="text-gray-300 dark:text-gray-600">·</span>
+                                    {practiceStats[l.id].totalSentences > 0 && (
+                                      <span className="text-emerald-600 dark:text-emerald-400 whitespace-nowrap">已磨 {practiceStats[l.id].totalSentences} 句</span>
+                                    )}
+                                    {practiceStats[l.id].totalSentences > 0 && practiceStats[l.id].totalLoops > 0 && (
+                                      <span className="text-gray-300 dark:text-gray-600">·</span>
+                                    )}
+                                    {practiceStats[l.id].totalLoops > 0 && (
+                                      <span className="text-blue-500 dark:text-blue-400 whitespace-nowrap">复读 {practiceStats[l.id].totalLoops} 遍</span>
+                                    )}
+                                  </>
+                                )}
+                             </div>
                           </div>
 
                           {/* Actions */}
-                          <div onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                              {l.keywords?.includes('local') && (
+                                <button
+                                  onClick={() => handleDeleteLesson(l)}
+                                  className="p-2 text-gray-300 hover:text-red-500 dark:text-gray-600 dark:hover:text-red-400 transition active:scale-90 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                  aria-label="删除课程"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
                               <FavoriteButton 
                                 isFavorite={isFavorite(l.id)} 
                                 onToggle={() => toggleFavorite(l.id)} 
@@ -275,7 +380,17 @@ function AppImproved() {
              {/* Lyrics Area - Taking up most space */}
              <div className="flex-1 overflow-hidden relative w-full">
                  <div className="absolute inset-0 bg-gradient-to-b from-gray-50 via-transparent to-gray-50 dark:from-gray-900 dark:to-gray-900 opacity-10 pointer-events-none z-10"></div>
-                 <Lyrics lines={lyrics} currentTime={currentTime}/>
+                 <Lyrics
+                    lines={lyrics}
+                    currentTime={currentTime}
+                    repeatRange={repeatRange}
+                    repeatCount={repeatCount}
+                    repeatStartIndex={repeatStartIndex}
+                    onLineClick={handleLyricLineClick}
+                    sentenceRepeat={sentenceRepeat}
+                    sentenceIteration={sentenceIteration}
+                    sentenceRepeatCount={sentenceRepeatCount}
+                 />
              </div>
 
              {/* Bottom Controls */}
@@ -289,6 +404,13 @@ function AppImproved() {
                      title={currentLesson?.title || ''}
                      volume={volume}
                      onVolumeChange={changeVolume}
+                     repeatRange={repeatRange}
+                     repeatCount={repeatCount}
+                     onClearRepeat={clearRepeatRange}
+                     sentenceRepeat={sentenceRepeat}
+                     sentenceRepeatCount={sentenceRepeatCount}
+                     onToggleSentenceRepeat={setSentenceRepeat}
+                     onSentenceRepeatCountChange={setSentenceRepeatCount}
                  />
              </div>
           </div>
@@ -363,7 +485,17 @@ function AppImproved() {
                  {/* Lyrics (Scrollable Middle) */}
                  <div className="flex-1 overflow-hidden relative my-4 mask-image-gradient">
                      <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-white dark:from-gray-900 dark:to-gray-900 opacity-20 pointer-events-none z-10"></div>
-                     <Lyrics lines={lyrics} currentTime={currentTime}/>
+                     <Lyrics
+                        lines={lyrics}
+                        currentTime={currentTime}
+                        repeatRange={repeatRange}
+                        repeatCount={repeatCount}
+                        repeatStartIndex={repeatStartIndex}
+                        onLineClick={handleLyricLineClick}
+                        sentenceRepeat={sentenceRepeat}
+                        sentenceIteration={sentenceIteration}
+                        sentenceRepeatCount={sentenceRepeatCount}
+                     />
                  </div>
 
                  {/* Bottom Controls */}
@@ -377,6 +509,13 @@ function AppImproved() {
                          title={currentLesson?.title || ''}
                          volume={volume}
                          onVolumeChange={changeVolume}
+                         repeatRange={repeatRange}
+                         repeatCount={repeatCount}
+                         onClearRepeat={clearRepeatRange}
+                         sentenceRepeat={sentenceRepeat}
+                         sentenceRepeatCount={sentenceRepeatCount}
+                         onToggleSentenceRepeat={setSentenceRepeat}
+                         onSentenceRepeatCountChange={setSentenceRepeatCount}
                      />
                  </div>
               </div>
