@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Pause, FastForward, Rewind, Volume2 } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Volume2, Headphones, Minus, Plus } from 'lucide-react';
 
 interface PlayerProps {
   playing: boolean;
@@ -12,6 +12,11 @@ interface PlayerProps {
   onVolumeChange: (val: number) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
+  // 逐句精听 (per-sentence intensive listening)
+  intensiveMode?: boolean;
+  repeatCount?: number;
+  onToggleIntensive?: () => void;
+  onRepeatCountChange?: (val: number) => void;
 }
 
 const formatTime = (time: number) => {
@@ -30,7 +35,11 @@ export const Player: React.FC<PlayerProps> = ({
   volume,
   onVolumeChange,
   onToggleFavorite,
-  isFavorite
+  isFavorite,
+  intensiveMode = false,
+  repeatCount = 3,
+  onToggleIntensive,
+  onRepeatCountChange,
 }) => {
   return (
     <div className="bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 shadow-xl pb-safe transition-colors duration-300">
@@ -103,6 +112,42 @@ export const Player: React.FC<PlayerProps> = ({
              className="flex-1 h-1.5 bg-gray-300 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-gray-500 dark:accent-gray-400"
            />
         </div>
+
+        {/* 逐句精听 (Per-sentence Intensive Listening) */}
+        {onToggleIntensive && (
+          <div className="mt-3 flex items-center justify-between px-4 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl">
+            <button
+              onClick={onToggleIntensive}
+              className={`flex items-center gap-2 text-sm font-bold transition ${intensiveMode ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}
+            >
+              <Headphones size={20} />
+              逐句精听
+              <span className={`ml-1 inline-flex h-5 w-9 items-center rounded-full px-0.5 transition ${intensiveMode ? 'bg-green-500 justify-end' : 'bg-gray-300 dark:bg-gray-600 justify-start'}`}>
+                <span className="h-4 w-4 rounded-full bg-white shadow" />
+              </span>
+            </button>
+
+            {/* Repeat-count stepper */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">每句</span>
+              <button
+                onClick={() => onRepeatCountChange?.(repeatCount - 1)}
+                disabled={repeatCount <= 1}
+                className="p-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-200 disabled:opacity-40 active:scale-95 transition"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="w-6 text-center text-sm font-bold tabular-nums dark:text-white">{repeatCount}</span>
+              <button
+                onClick={() => onRepeatCountChange?.(repeatCount + 1)}
+                className="p-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-200 active:scale-95 transition"
+              >
+                <Plus size={14} />
+              </button>
+              <span className="text-xs text-gray-400">遍</span>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

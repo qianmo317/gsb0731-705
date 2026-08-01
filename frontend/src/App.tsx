@@ -4,6 +4,7 @@ import { useSearch } from './hooks/useSearch';
 import { useFavorites } from './hooks/useFavorites';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { parseLRC, LrcLine } from './utils/lrcParser';
+import { getPracticeStats, hasPracticeRecord, removePracticeRecord, PracticeStats } from './utils/practiceStore';
 
 import { Lyrics } from './components/Lyrics';
 import { Player } from './components/Player';
@@ -11,7 +12,7 @@ import { SearchBar } from './components/SearchBar';
 import { UploadZone } from './components/UploadZone';
 import { CategoryTabs } from './components/CategoryTabs';
 import { FavoriteButton } from './components/FavoriteButton';
-import { ChevronDown, ListMusic } from 'lucide-react'; // Import icons
+import { ChevronDown, ListMusic, Trash2 } from 'lucide-react'; // Import icons
 
 interface Lesson {
   id: string;
@@ -38,20 +39,8 @@ function AppImproved() {
   // --- Filtering Logic ---
   const categories = useMemo(() => {
      const cats = new Set(lessons.map(l => l.category).filter(Boolean));
-     return ['全部', '收藏', ...Array.from(cats)];
+     return ['全部', '收藏', '练过', ...Array.from(cats)];
   }, [lessons]);
-
-  const displayedLessons = useMemo(() => {
-    let result = searchResults;
-    
-    if (selectedCategory === '收藏') {
-      result = result.filter(l => favorites.includes(l.id));
-    } else if (selectedCategory !== '全部') {
-      result = result.filter(l => l.category === selectedCategory);
-    }
-    
-    return result;
-  }, [searchResults, selectedCategory, favorites]);
 
   // --- Audio Hook ---
   const currentLesson = lessons.find(l => l.id === currentLessonId);
@@ -66,11 +55,47 @@ function AppImproved() {
       volume, 
       changeVolume, 
       error, 
-      loading 
+      loading,
+      loopRegion,
+      pendingStart,
+      loopCount,
+      selectLyricLine,
+      intensiveMode,
+      intensiveIndex,
+      currentRepeat,
+      repeatCount,
+      toggleIntensiveMode,
+      changeRepeatCount,
+      practiceLoops,
+      practiceSentences
   } = useAudio({
     src: audioSrc,
-    id: currentLessonId
+    id: currentLessonId,
+    lines: lyrics
   });
+
+  // Per-lesson practice stats, read from the existing `abloop-${id}` records.
+  // Recomputed when lessons change or the current lesson's live counters tick,
+  // so badges (e.g. "已磨 12 句") update in real time as you practice.
+  const statsMap = useMemo(() => {
+    const map: Record<string, PracticeStats> = {};
+    lessons.forEach(l => { map[l.id] = getPracticeStats(l.id); });
+    return map;
+  }, [lessons, currentLessonId, practiceLoops, practiceSentences]);
+
+  const displayedLessons = useMemo(() => {
+    let result = searchResults;
+
+    if (selectedCategory === '收藏') {
+      result = result.filter(l => favorites.includes(l.id));
+    } else if (selectedCategory === '练过') {
+      result = result.filter(l => hasPracticeRecord(l.id));
+    } else if (selectedCategory !== '全部') {
+      result = result.filter(l => l.category === selectedCategory);
+    }
+
+    return result;
+  }, [searchResults, selectedCategory, favorites, statsMap]);
 
   // --- Effects ---
   useEffect(() => {
@@ -168,6 +193,23 @@ function AppImproved() {
       setIsPlayerExpanded(true);
   };
 
+  // Delete a local (uploaded) lesson: remove it from the list, from IndexedDB,
+  // and clear its practice/loop record so no trace is left behind.
+  const handleDeleteLesson = async (id: string) => {
+     removePracticeRecord(id);
+     setLessons(prev => prev.filter(l => l.id !== id));
+     if (currentLessonId === id) {
+        setCurrentLessonId('');
+        setIsPlayerExpanded(false);
+     }
+     try {
+        const { deleteLocalLesson } = await import('./utils/db');
+        await deleteLocalLesson(id);
+     } catch (e) {
+        console.warn("Failed to delete custom lesson from DB", e);
+     }
+  };
+
   // --- Render ---
   return (
     <div className={`h-full min-h-screen transition-colors duration-300 ${isDarkMode ? 'dark bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} font-sans`}>
@@ -212,7 +254,13 @@ function AppImproved() {
                  {displayedLessons.length === 0 ? (
                      <div className="text-center py-10 text-gray-400">没有找到相关课程</div>
                  ) : (
-                     displayedLessons.map(l => (
+                     displayedLessons.map(l => {
+                        const stats = statsMap[l.id] || { loops: 0, sentences: 0 };
+                        const badges: string[] = [];
+                        if (stats.sentences > 0) badges.push(`已磨 ${stats.sentences} 句`);
+                        if (stats.loops > 0) badges.push(`复读 ${stats.loops} 遍`);
+                        const isLocal = l.id.startsWith('local-');
+                        return (
                         <div key={l.id} 
                           onClick={() => handleLessonSelect(l.id)}
                           className={`group relative p-3 rounded-xl shadow-sm border flex items-center space-x-4 active:scale-[0.98] transition-all cursor-pointer
@@ -232,14 +280,29 @@ function AppImproved() {
                                 {l.title}
                              </h3>
                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{l.category}</p>
+                             {/* Practice trace (练习痕迹) — low-key badge */}
+                             {badges.length > 0 && (
+                                <p className="mt-0.5 text-[11px] text-emerald-600/80 dark:text-emerald-400/80 truncate">
+                                   {badges.join(' · ')}
+                                </p>
+                             )}
                           </div>
 
                           {/* Actions */}
-                          <div onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
                               <FavoriteButton 
                                 isFavorite={isFavorite(l.id)} 
                                 onToggle={() => toggleFavorite(l.id)} 
                               />
+                              {isLocal && (
+                                <button
+                                  onClick={() => handleDeleteLesson(l.id)}
+                                  title="删除本地课程"
+                                  className="p-2 text-gray-300 hover:text-red-500 transition active:scale-95"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              )}
                           </div>
                           
                           {/* Playing Indicator */}
@@ -252,7 +315,8 @@ function AppImproved() {
                               </div>
                           )}
                         </div>
-                     ))
+                        );
+                     })
                  )}
               </div>
           </div>
@@ -275,7 +339,7 @@ function AppImproved() {
              {/* Lyrics Area - Taking up most space */}
              <div className="flex-1 overflow-hidden relative w-full">
                  <div className="absolute inset-0 bg-gradient-to-b from-gray-50 via-transparent to-gray-50 dark:from-gray-900 dark:to-gray-900 opacity-10 pointer-events-none z-10"></div>
-                 <Lyrics lines={lyrics} currentTime={currentTime}/>
+                 <Lyrics lines={lyrics} currentTime={currentTime} loopRegion={loopRegion} pendingStart={pendingStart} loopCount={loopCount} onLineClick={selectLyricLine} intensiveMode={intensiveMode} intensiveIndex={intensiveIndex} currentRepeat={currentRepeat} repeatCount={repeatCount}/>
              </div>
 
              {/* Bottom Controls */}
@@ -289,6 +353,10 @@ function AppImproved() {
                      title={currentLesson?.title || ''}
                      volume={volume}
                      onVolumeChange={changeVolume}
+                     intensiveMode={intensiveMode}
+                     repeatCount={repeatCount}
+                     onToggleIntensive={toggleIntensiveMode}
+                     onRepeatCountChange={changeRepeatCount}
                  />
              </div>
           </div>
@@ -363,7 +431,7 @@ function AppImproved() {
                  {/* Lyrics (Scrollable Middle) */}
                  <div className="flex-1 overflow-hidden relative my-4 mask-image-gradient">
                      <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-white dark:from-gray-900 dark:to-gray-900 opacity-20 pointer-events-none z-10"></div>
-                     <Lyrics lines={lyrics} currentTime={currentTime}/>
+                     <Lyrics lines={lyrics} currentTime={currentTime} loopRegion={loopRegion} pendingStart={pendingStart} loopCount={loopCount} onLineClick={selectLyricLine} intensiveMode={intensiveMode} intensiveIndex={intensiveIndex} currentRepeat={currentRepeat} repeatCount={repeatCount}/>
                  </div>
 
                  {/* Bottom Controls */}
